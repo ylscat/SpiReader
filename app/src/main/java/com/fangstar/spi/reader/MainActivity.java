@@ -2,33 +2,44 @@ package com.fangstar.spi.reader;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.KeyEvent;
 import android.view.View;
-import android.widget.CompoundButton;
+import android.widget.ArrayAdapter;
+import android.widget.EditText;
+import android.widget.ListView;
 import android.widget.TextView;
-import android.widget.ToggleButton;
+import android.widget.Toast;
 
-public class MainActivity extends Activity implements CompoundButton.OnCheckedChangeListener, View.OnClickListener {
+import java.util.ArrayList;
+import java.util.Arrays;
+
+public class MainActivity extends Activity implements
+        View.OnClickListener,
+        TextView.OnEditorActionListener, RegCallback, WriteCallback {
     private Port mPort;
-    private ReadPinThread mThread;
+    private TransceiverThread mThread;
+    private EditText mEditText, mValue;
+    private ArrayAdapter<String> mAdapter;
+    private ArrayList<String> mList = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
         mPort = new Port();
-        mThread = new ReadPinThread(mPort);
-//        mThread.start();
-        ToggleButton tb = (ToggleButton) findViewById(R.id.nss);
-        tb.setOnCheckedChangeListener(this);
-        tb = (ToggleButton) findViewById(R.id.sck);
-        tb.setOnCheckedChangeListener(this);
-        tb = (ToggleButton) findViewById(R.id.mosi);
-        tb.setOnCheckedChangeListener(this);
-        tb = (ToggleButton) findViewById(R.id.reset);
-        tb.setOnCheckedChangeListener(this);
-
-        findViewById(R.id.bt_miso).setOnClickListener(this);
-        findViewById(R.id.bt_irq).setOnClickListener(this);
+        mThread = new TransceiverThread(mPort);
+        mThread.start();
+        mEditText = (EditText)findViewById(R.id.reg);
+        mEditText.setOnEditorActionListener(this);
+        mValue = (EditText)findViewById(R.id.value);
+        mValue.setOnEditorActionListener(this);
+        findViewById(R.id.read).setOnClickListener(this);
+        findViewById(R.id.write).setOnClickListener(this);
+        ListView lv = (ListView)findViewById(R.id.list);
+        mAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_list_item_1,
+                mList);
+        lv.setAdapter(mAdapter);
     }
 
     @Override
@@ -39,34 +50,81 @@ public class MainActivity extends Activity implements CompoundButton.OnCheckedCh
     }
 
     @Override
-    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-        switch (buttonView.getId()) {
-            case R.id.nss:
-                mPort.setNss(isChecked ? 1 : 0);
+    public void onClick(View v) {
+        switch (v.getId()) {
+            case R.id.read:
+                read();
                 break;
-            case R.id.sck:
-                mPort.setSck(isChecked ? 1 : 0);
-                break;
-            case R.id.mosi:
-                mPort.setMosi(isChecked ? 1 : 0);
-                break;
-            case R.id.reset:
-                mPort.setReset(isChecked ? 1 : 0);
+            case R.id.write:
+                write();
                 break;
         }
     }
 
+    private void read() {
+        String text = mEditText.getText().toString().trim();
+        int addr;
+        try {
+            addr = Integer.parseInt(text, 16);
+        }
+        catch (NumberFormatException e) {
+            Toast.makeText(this, "Bad address", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        mThread.readReg(addr, this);
+    }
+
+    private void write() {
+        String text = mEditText.getText().toString().trim();
+        int addr;
+        try {
+            addr = Integer.parseInt(text, 16);
+        }
+        catch (NumberFormatException e) {
+            Toast.makeText(this, "Bad address", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        text = mValue.getText().toString().trim();
+        int value;
+        try {
+            value = Integer.parseInt(text, 16);
+        }
+        catch (NumberFormatException e) {
+            Toast.makeText(this, "Bad address", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        mThread.writeReg(addr, value, this);
+    }
+
     @Override
-    public void onClick(View v) {
+    public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
         switch (v.getId()) {
-            case R.id.bt_irq:
-                TextView tv = (TextView) findViewById(R.id.tv_irq);
-                tv.setText(String.valueOf((char)mPort.readIrq()));
+            case R.id.reg:
+                read();
                 break;
-            case R.id.bt_miso:
-                tv = (TextView) findViewById(R.id.tv_miso);
-                tv.setText(String.valueOf((char)mPort.readMiso()));
+            case R.id.value:
+                write();
                 break;
         }
+        return true;
+    }
+
+    @Override
+    public void reg(int address, int data) {
+        if(mList.size() == 10)
+            mList.remove(9);
+        mList.add(0, String.format("0x%X  %X", address, data));
+        mAdapter.notifyDataSetChanged();
+    }
+
+    @Override
+    public void reg(int address, byte[] data) {
+        Toast.makeText(this,
+                String.format("Written, %s",
+                        Arrays.toString(data)),
+                Toast.LENGTH_LONG).show();
     }
 }
